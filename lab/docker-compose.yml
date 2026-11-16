@@ -1,0 +1,44 @@
+﻿version: "3.9"
+
+services:
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: dvwa-web
+    depends_on:
+      - db
+    ports:
+      - "8080:80"
+    environment:
+      - MYSQL_HOST=db
+      - MYSQL_DATABASE=dvwa
+      - MYSQL_USER=dvwa
+      - MYSQL_PASSWORD=dvwa
+      - DVWA_WEBMASTER=admin@example.com
+      - DVWA_DEFAULT_SECURITY=low
+      - DVWA_SERVER_NAME=DVWA-Lab
+    networks:
+      - lab-net
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.0
+    container_name: dvwa-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dvwa
+      MYSQL_USER: dvwa
+      MYSQL_PASSWORD: dvwa
+    volumes:
+      - dvwa-db-data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    networks:
+      - lab-net
+    restart: unless-stopped
+
+networks:
+  lab-net:
+    name: uas-lab-net
+    driver: bridge
+
+volumes:
+  dvwa-db-data:
