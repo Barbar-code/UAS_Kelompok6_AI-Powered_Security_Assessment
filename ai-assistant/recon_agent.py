@@ -28,6 +28,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -104,13 +105,15 @@ def load_template(name: str) -> str:
 
 
 def render(template: str, values: dict[str, str]) -> str:
-    """Ganti placeholder {{KEY}}; gagal keras kalau ada placeholder tersisa."""
+    """Ganti placeholder {{KEY}}; gagal keras kalau ada placeholder tanpa nilai."""
+    required = set(re.findall(r"\{\{\s*([A-Z_]+)\s*\}\}", template))
+    missing = sorted(required - set(values))
+    if missing:
+        raise ValueError("Placeholder belum punya nilai: " + ", ".join(missing))
     out = template
     for key, value in values.items():
         out = out.replace("{{" + key + "}}", value)
-    leftover = sorted(set(part.split("}}")[0] for part in out.split("{{")[1:]))
-    if leftover:
-        raise ValueError("Placeholder belum terisi: " + ", ".join(leftover))
+        out = out.replace("{{ " + key + " }}", value)
     return out
 
 
@@ -348,7 +351,7 @@ def main(argv: list[str] | None = None) -> int:
         "GOAL": args.goal,
         "TOOLS": args.tools,
         "MODEL": args.model,
-        "NOTES": notes,
+        "NOTES": notes if notes.strip() and notes.strip() != "-" else "(tidak ada catatan tambahan)",
         "SCENARIO": args.scenario,
     }
     template_name = "recon-prompt.md" if args.mode == "recon" else "report-draft-prompt.md"
