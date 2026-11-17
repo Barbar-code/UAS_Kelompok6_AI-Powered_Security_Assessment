@@ -1,2 +1,9 @@
 AGENTS.md
 /docs/laporan-akhir/
+
+# Output lokal AI assistant (hasil run & metrik; jangan di-commit)
+ai-assistant/output/
+
+# Python
+__pycache__/
+*.pyc

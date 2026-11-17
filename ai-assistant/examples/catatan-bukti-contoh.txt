@@ -1,0 +1,24 @@
+CATATAN BUKTI — CONTOH (JANGAN DIPAKAI SEBAGAI BUKTI ASLI)
+
+Ganti isi file ini dengan log/screenshot asli dari attacks/evidence/.
+File ini hanya untuk mencoba `--mode report` sebelum data nyata tersedia.
+
+Skenario      : S2.1 — SQL Injection (contoh)
+Target        : http://localhost:8080/vulnerabilities/sqli/
+Level DVWA    : low
+Tanggal       : 2026-11-17
+Tool          : browser + Burp Suite Community
+
+Langkah:
+1. Login sebagai admin.
+2. Buka modul SQL Injection, isi User ID dengan nilai normal (1) -> muncul data admin.
+3. Coba `1' OR '1'='1` -> daftar seluruh user muncul (contoh).
+4. Ulangi pada level medium (contoh hasil: tidak berhasil karena input diproses berbeda).
+
+Hasil     : (contoh) berhasil pada level low, belum berhasil pada level medium.
+Bukti     : attacks/evidence/screenshots/CONTOH-s21-low-01.png (tidak ada, file contoh)
+            attacks/evidence/logs/CONTOH-s21-low.txt (tidak ada, file contoh)
+
+Catatan analisis:
+- (contoh) query tidak memakai parameterized statement pada level low.
+- (contoh) level medium memakai validasi tambahan (mysqli_real_escape_string).
