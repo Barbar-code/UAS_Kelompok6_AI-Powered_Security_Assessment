@@ -1,0 +1,9 @@
+# Proyek ini sengaja dibuat TANPA dependency eksternal: seluruh kode di
+# `recon_agent.py` memakai standard library Python 3.9+ (urllib, json, ipaddress).
+# Jadi `pip install -r requirements.txt` hanya memastikan tidak ada yang perlu dipasang.
+#
+# Syarat minimum: Python 3.9+.
+#
+# Opsional (tidak wajib, hanya untuk eksperimen pengembangan):
+# requests>=2.31    # alternatif pengganti urllib bila ingin kode lebih ringkas
+# rich>=13.7        # tampilan streaming metrik lebih rapi di terminal
