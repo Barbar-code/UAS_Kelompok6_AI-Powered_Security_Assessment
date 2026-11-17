@@ -26,6 +26,8 @@ ai-assistant/
 ├── prompts/
 │   ├── recon-prompt.md           # template rencana recon
 │   └── report-draft-prompt.md    # template draf bagian laporan
+├── examples/
+│   └── catatan-bukti-contoh.txt  # contoh catatan untuk uji --mode report
 └── output/                       # hasil run + runs.jsonl (gitignored)
 ```
 
@@ -80,6 +82,10 @@ python ai-assistant/recon_agent.py --mode report --scenario S2.1 `
 
 # e. Tujuan khusus
 python ai-assistant/recon_agent.py --goal "Uji SQL Injection modul SQL Injection level medium"
+
+# f. Coba mode report tanpa data asli (pakai catatan contoh)
+python ai-assistant/recon_agent.py --mode report --scenario S2.1 `
+    --notes-file ai-assistant/examples/catatan-bukti-contoh.txt --dry-run
 ```
 
 Hasil setiap run:
