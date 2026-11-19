@@ -137,6 +137,7 @@ def generate(
     options: dict,
     timeout: float,
     stream: bool = True,
+    keep_alive: str = "30m",
 ) -> tuple[str, dict]:
     """Kirim prompt ke /api/generate dan kembalikan (teks, metrik)."""
     payload = {
@@ -144,6 +145,9 @@ def generate(
         "prompt": prompt,
         "stream": stream,
         "options": options,
+        # Model tetap di RAM antar run (default Ollama hanya 5 menit, sedangkan
+        # satu run CPU bisa lebih lama dari itu -> tiap run bayar muat ulang).
+        "keep_alive": keep_alive,
     }
     req = urllib.request.Request(
         host.rstrip("/") + "/api/generate",
@@ -155,12 +159,19 @@ def generate(
     started = time.perf_counter()
     chunks: list[str] = []
     final: dict = {}
+    first_token_s: float | None = None
 
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         if not stream:
             final = json.loads(resp.read().decode("utf-8"))
             chunks.append(final.get("response", ""))
+            # Pada mode non-stream tidak ada token yang "mengalir", jadi waktu
+            # token pertama tidak bermakna (jangan dicatat = latency total).
+            first_token_s = None
         else:
+            # Beri tanda bahwa proses masih hidup: prompt eval CPU bisa lama.
+            sys.stdout.write("[i] menunggu token pertama (proses prompt)...")
+            sys.stdout.flush()
             for line in resp:
                 line = line.strip()
                 if not line:
@@ -168,6 +179,10 @@ def generate(
                 item = json.loads(line.decode("utf-8"))
                 piece = item.get("response", "")
                 if piece:
+                    if first_token_s is None:
+                        first_token_s = time.perf_counter() - started
+                        note = f"[i] token pertama setelah {first_token_s:.1f} s"
+                        sys.stdout.write("\r" + note.ljust(62) + "\n")
                     chunks.append(piece)
                     sys.stdout.write(piece)
                     sys.stdout.flush()
@@ -178,8 +193,13 @@ def generate(
     latency = time.perf_counter() - started
 
     eval_ns = int(final.get("eval_duration") or 0)
+    prompt_ns = int(final.get("prompt_eval_duration") or 0)
+    load_ns = int(final.get("load_duration") or 0)
     metrics = {
         "latency_s": round(latency, 3),
+        "first_token_s": round(first_token_s, 3) if first_token_s else None,
+        "load_s": round(load_ns / 1e9, 3) if load_ns else None,
+        "prompt_eval_s": round(prompt_ns / 1e9, 3) if prompt_ns else None,
         "eval_count": final.get("eval_count"),
         "prompt_eval_count": final.get("prompt_eval_count"),
         "eval_duration_s": round(eval_ns / 1e9, 3) if eval_ns else None,
@@ -271,8 +291,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Folder hasil (default: ai-assistant/output)",
     )
     parser.add_argument("--temperature", type=float, default=0.3)
-    parser.add_argument("--num-predict", type=int, default=700)
-    parser.add_argument("--num-ctx", type=int, default=4096)
+    parser.add_argument(
+        "--num-predict",
+        type=int,
+        default=900,
+        help="Batas token jawaban (default: 900; 700 terbukti memotong jawaban)",
+    )
+    parser.add_argument(
+        "--num-ctx",
+        type=int,
+        default=3072,
+        help="Ukuran context window (default: 3072; lebih kecil = KV-cache hemat RAM)",
+    )
+    parser.add_argument(
+        "--num-thread",
+        type=int,
+        default=8,
+        help="Jumlah thread CPU (default: 8 = semua core i3-N305)",
+    )
+    parser.add_argument(
+        "--keep-alive",
+        default="30m",
+        help="Berapa lama model ditahan di RAM setelah run (default: 30m)",
+    )
+    parser.add_argument(
+        "--tag",
+        default="",
+        help="Label run untuk runs.jsonl (mis. K1, bench-thread4)",
+    )
     parser.add_argument("--timeout", type=float, default=900.0)
     parser.add_argument(
         "--dry-run",
@@ -375,8 +421,12 @@ def main(argv: list[str] | None = None) -> int:
         "temperature": args.temperature,
         "num_predict": args.num_predict,
         "num_ctx": args.num_ctx,
+        "num_thread": args.num_thread,
     }
-    print(f"[i] model={args.model} host={args.host} mode={args.mode} level={args.level}")
+    print(
+        f"[i] model={args.model} host={args.host} mode={args.mode} level={args.level} "
+        f"threads={args.num_thread} ctx={args.num_ctx} max_tokens={args.num_predict}"
+    )
     try:
         answer, metrics = generate(
             host=args.host,
@@ -385,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
             options=options,
             timeout=args.timeout,
             stream=not args.no_stream,
+            keep_alive=args.keep_alive,
         )
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:500]
@@ -414,6 +465,10 @@ def main(argv: list[str] | None = None) -> int:
         "target": target,
         "level": args.level,
         "scenario": args.scenario if args.mode == "report" else None,
+        "tag": args.tag or None,
+        "num_thread": args.num_thread,
+        "num_ctx": args.num_ctx,
+        "num_predict": args.num_predict,
         "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
         "prompt_chars": len(prompt),
         "answer_chars": len(answer),
@@ -425,6 +480,8 @@ def main(argv: list[str] | None = None) -> int:
     print("\n---")
     print(f"[i] Jawaban disimpan di: {out_path}")
     print(f"[i] Latency: {metrics['latency_s']} s | "
+          f"token pertama: {metrics['first_token_s']} s | "
+          f"prompt eval: {metrics['prompt_eval_s']} s | "
           f"tokens/s: {metrics['tokens_per_second']} | "
           f"eval_count: {metrics['eval_count']}")
     print(f"[i] Metrik ditambahkan ke: {outdir / RUNS_LOG}")

@@ -19,6 +19,7 @@ kecil terkuantisasi, karena tidak ada anggota tim yang punya GPU diskrit.
 ```
 ai-assistant/
 ├── recon_agent.py                # CLI: mode recon & report + guardrail lab
+├── summarize_runs.py             # rangkum runs.jsonl jadi tabel Markdown/CSV
 ├── requirements.txt              # kosong secara fungsional (stdlib only)
 ├── README.md                     # file ini
 ├── ollama-config/
@@ -95,6 +96,15 @@ Hasil setiap run:
 - `ai-assistant/output/runs.jsonl` → metrik (latency, `eval_count`, tokens/s, hash prompt)
   yang dipakai untuk mengisi `docs/evaluasi-ai.md`
 
+Rangkum semua metrik jadi tabel siap-tempel:
+
+```powershell
+python ai-assistant/summarize_runs.py            # tabel per run
+python ai-assistant/summarize_runs.py --per-tag  # rata-rata per kasus (K1..K5)
+python ai-assistant/summarize_runs.py --tag K1   # hanya satu kasus
+python ai-assistant/summarize_runs.py --format csv > metrik.csv
+```
+
 ## 5. Alur kolaborasi
 
 ```
@@ -122,8 +132,11 @@ bukti adalah tanggung jawab Anggota 3, sehingga tidak ada dua sumber kebenaran u
 | `--level` | `low` | `low` / `medium` / `high` / `impossible` |
 | `--model` | `pentest-lab:3b` | model Ollama |
 | `--temperature` | `0.3` | rendah → saran teknis stabil |
-| `--num-ctx` | `4096` | cukup untuk template + catatan bukti |
-| `--num-predict` | `700` | batas panjang jawaban (hemat waktu CPU) |
+| `--num-ctx` | `3072` | cukup untuk prompt 3,8 kB + jawaban; KV-cache lebih hemat RAM |
+| `--num-predict` | `900` | batas panjang jawaban (700 terbukti memotong di bagian 4) |
+| `--num-thread` | `8` | pakai semua core i3-N305 (4 core = ± setengah throughput) |
+| `--keep-alive` | `30m` | model ditahan di RAM agar run berikutnya tidak muat ulang |
+| `--tag` | – | label run di `runs.jsonl` (mis. `K1`, `bench-thread4`) |
 | `--dry-run` | – | cetak prompt tanpa memanggil LLM |
 | `--check` | – | cek Ollama & ketersediaan model |
 
