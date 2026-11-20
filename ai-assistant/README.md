@@ -160,7 +160,12 @@ bukti adalah tanggung jawab Anggota 3, sehingga tidak ada dua sumber kebenaran u
 | Guardrail target luar lab (`192.168.1.10`) | ✅ ditolak, exit code `2` |
 | Guardrail target lab (`172.20.0.10`) | ✅ diterima |
 | `--check` tanpa Ollama | ✅ pesan jelas, exit code `3` |
-| Inferensi live | ⏳ harus dijalankan di laptop Dzikra (Ollama belum terpasang di mesin ini) |
+| `ollama create pentest-lab:3b` | ✅ model 1,9 GB, SYSTEM prompt & parameter terbawa |
+| `--check` dengan Ollama 0.40.16 | ✅ `Model diminta (pentest-lab:3b): ADA`, exit `0` |
+| Inferensi live (run pertama) | ✅ 434 s / 3,12 token/s — **lambat**, RAM tersisa 0,7 GB |
+| Benchmark `num_thread` 4 vs 8 | ✅ 110,6 s vs **86,5 s** (150 token) → 8 thread dipakai |
+| Setelah optimasi | ✅ ± 5,2 token/s, prompt eval 46,7 s (dari 210 s) |
+| Evaluasi K1–K4 (12 run) | ✅ selesai — skor rata-rata **2,80** (target 3,5) → assistant hanya layak sebagai *pendamping*; rincian di `docs/evaluasi-ai.md` §4–§7 |
 
 ## 9. Referensi
 
