@@ -12,14 +12,15 @@
 
 | Item | Nilai |
 |---|---|
-| Perangkat | Laptop Anggota 2 — Intel i3-N305 (8 core), RAM 8 GB, tanpa GPU diskrit |
+| Perangkat | Laptop Anggota 2 — Intel i3-N305 (8 core, 8 thread), RAM 7,6 GB terpakai, tanpa GPU diskrit |
 | Sistem operasi | Windows 11 25H2 |
-| Runtime | Ollama (versi: _isi saat pengujian_) |
-| Model dasar | `qwen2.5:3b-instruct`, kuantisasi Q4_K_M (~2 GB) |
-| Model proyek | `pentest-lab:3b` (modelfile: `temperature 0.3`, `num_ctx 4096`, `num_predict 700`, `num_thread 4`) |
+| Runtime | Ollama 0.40.16 (server `http://localhost:11434`) |
+| Model dasar | `qwen2.5:3b-instruct`, kuantisasi Q4_K_M (± 1,9 GB) |
+| Model proyek | `pentest-lab:3b` (modelfile: `temperature 0.3`, `num_ctx 3072`, `num_predict 900`, `num_thread 8`, `keep_alive 30m`) |
 | Target | DVWA `http://localhost:8080` (level `low`, `medium`, `high`) |
 | Mode eksekusi | CPU-only, tanpa akselerasi GPU |
-| Script | `ai-assistant/recon_agent.py` (commit: _isi hash commit_) |
+| Script | `ai-assistant/recon_agent.py` (commit `436c291`) |
+| Tanggal pengujian | 19–20 November 2026 |
 
 Catatan: angka latency/tokens-per-second di bawah bersifat **khas perangkat ini**; pada
 laptop dengan CPU lebih tua (mis. i5-6200U milik Anggota 1) hasilnya akan lebih lambat.
@@ -30,7 +31,8 @@ Karena itu evaluasi kualitas (bagian 4–6) dipisahkan dari evaluasi performa (b
 ## 2. Skenario uji
 
 Lima kasus dipilih agar mewakili pekerjaan nyata di `docs/skenario-serangan.md`.
-Setiap kasus dijalankan **3 kali** (temperature 0.3) untuk melihat konsistensi.
+Setiap kasus dijalankan **3 kali** (temperature 0.3, `num_predict 900`) dan diberi
+`--tag K1`…`--tag K5` agar mudah dirangkum dari `runs.jsonl`.
 
 | Kode | Kasus | Perintah yang dipakai | Fokus penilaian |
 |---|---|---|---|
@@ -58,7 +60,8 @@ Setiap jawaban dinilai manual oleh Anggota 2 dan diverifikasi silang oleh Anggot
 | **Kepatuhan format** | heading/tabel tidak sesuai template | sebagian sesuai | persis sesuai template prompt |
 
 **False lead** dicatat terpisah: satu baris per saran yang menyesatkan, beserta
-kategori (`halusinasi-fakta`, `perintah-salah`, `prioritas-keliru`, `di-luar-scope`).
+kategori (`halusinasi-fakta`, `perintah-salah`, `prioritas-keliru`, `di-luar-scope`,
+`kebocoran-template` untuk kasus model menyalin instruksi prompt sebagai isi jawaban).
 
 Rumus skor akhir per kasus (bobot sama):
 
@@ -70,71 +73,150 @@ skor_kasus = (relevansi + kebenaran + eksekusi + kesetiaan + format) / 5
 
 ## 4. Tabel hasil per kasus
 
-_Isi setelah menjalankan evaluasi live._ Kolom "rata-rata" dari 3 run.
+Dijalankan 20 November 2026, 06:37–07:02, model `pentest-lab:3b`, temperature 0.3,
+`num_predict 900`. Kolom "eksekusi" dinilai dengan membandingkan perintah terhadap perilaku
+DVWA sesungguhnya; verifikasi akhir oleh Anggota 3 masih diperlukan (lihat §6).
 
 | Kode | Run | Relevansi | Kebenaran | Eksekusi | Kesetiaan | Format | Skor | Catatan |
 |---|---|---|---|---|---|---|---|---|
-| K1 | 1 | | | | | | | |
-| K1 | 2 | | | | | | | |
-| K1 | 3 | | | | | | | |
-| K1 | **rata-rata** | | | | | | | |
-| K2 | 1 | | | | | | | |
-| K2 | 2 | | | | | | | |
-| K2 | 3 | | | | | | | |
-| K2 | **rata-rata** | | | | | | | |
-| K3 | 1 | | | | | | | |
-| K3 | 2 | | | | | | | |
-| K3 | 3 | | | | | | | |
-| K3 | **rata-rata** | | | | | | | |
-| K4 | 1 | | | | | | | |
-| K4 | 2 | | | | | | | |
-| K4 | 3 | | | | | | | |
-| K4 | **rata-rata** | | | | | | | |
-| K5 | 1 | | | | | | | |
-| K5 | 2 | | | | | | | |
-| K5 | 3 | | | | | | | |
-| K5 | **rata-rata** | | | | | | | |
+| K1 | 1 | 4 | 3 | 3 | 4 | 4 | **3,6** | Hipotesis masih normatif ("modul butuh login"), bukan dugaan kerentanan; endpoint benar |
+| K1 | 2 | 4 | 3 | 3 | 4 | 4 | **3,6** | `--data "security=low"` ke `login.php` salah (level diubah lewat `security.php`) |
+| K1 | 3 | 4 | 3 | 3 | 3 | 2 | **3,0** | Menyalin instruksi template apa adanya: "Dua sampai empat kalimat: apa yang diuji…" |
+| K1 | **rata-rata** | 4,0 | 3,0 | 3,0 | 3,7 | 3,3 | **3,40** | Kasus terbaik |
+| K2 | 1 | 3 | 2 | 2 | 3 | 3 | **2,6** | `nmap -p 80` (port salah), `--data` dikirim ke endpoint GET, payload `sqli_blind` tidak tepat |
+| K2 | 2 | 2 | 1 | 1 | 2 | 1 | **1,4** | Jawaban rusak: URL-encoded sampah ±900 token, hanya 2 bagian, terpotong |
+| K2 | 3 | 3 | 3 | 3 | 3 | 3 | **3,0** | Endpoint & payload benar, tapi tetap memakai `--data` pada endpoint GET |
+| K2 | **rata-rata** | 2,7 | 2,0 | 2,0 | 2,7 | 2,3 | **2,33** | Kasus terlemah |
+| K3 | 1 | 3 | 2 | 2 | 3 | 3 | **2,6** | Memberi 10 perintah (diminta 4–8), melenceng ke SQLi/FI/upload, `grep 'XSS Success'` tidak ada di DVWA, terpotong |
+| K3 | 2 | 3 | 2 | 2 | 3 | 4 | **2,8** | Payload SQLi dipakai untuk XSS; `xss_s` memakai parameter `name` (seharusnya `txtName`+`mtxMessage`) |
+| K3 | 3 | 4 | 3 | 3 | 3 | 3 | **3,2** | Terbaik di kasus ini: `POST xss_s` dengan `txtName`/`mtxMessage` benar, meski masih menyalin satu baris template |
+| K3 | **rata-rata** | 3,3 | 2,3 | 2,3 | 3,0 | 3,3 | **2,87** | |
+| K4 | 1 | 3 | 2 | 3 | 3 | 4 | **3,0** | Endpoint `/vulnerabilities/exec/` benar, tapi mengarang parameter `command=` |
+| K4 | 2 | 3 | 2 | 2 | 3 | 2 | **2,4** | Hanya sampai bagian 3, jawaban terputus (`stop`) di tengah blok kode |
+| K4 | 3 | 3 | 2 | 2 | 2 | 3 | **2,4** | `nmap --script=vulnscan` dan `--script=sqli` tidak valid; alasan "high membuat rentan" terbalik |
+| K4 | **rata-rata** | 3,0 | 2,0 | 2,3 | 2,7 | 3,0 | **2,60** | |
+| K5 | 1–3 | – | – | – | – | – | – | **Belum dijalankan**: menunggu log bukti asli dari Anggota 3 |
+
+Skor rata-rata 4 kasus yang selesai: **2,80** (target kelayakan yang ditetapkan: ≥ 3,5).
 
 ## 5. Tabel false lead / halusinasi
 
 | Kode | Saran yang menyesatkan | Kategori | Dampak bila diikuti | Ada di run ke- |
 |---|---|---|---|---|
-| | | | | |
+| K1 | `curl --data "security=low" http://localhost:8080/login.php` | perintah-salah | Level keamanan tidak berubah; penguji mengira sedang menguji `low` padahal bukan | 2 |
+| K1 | Menyalin kalimat instruksi prompt "Dua sampai empat kalimat: apa yang diuji…" ke dalam jawaban | kebocoran-template | Jawaban terlihat seperti belum selesai; mengurangi kredibilitas | 3 |
+| K2 | `nmap -p 80 localhost` | halusinasi-fakta | Port target sebenarnya 8080; pemindaian menyimpulkan "tidak ada layanan web" | 1 |
+| K2 | `curl --data "id=$i" ".../sqli/?id=1"` | perintah-salah | Parameter GET diabaikan karena nilainya dikirim di body POST; uji SQLi tidak benar-benar terjadi | 1, 3 |
+| K2 | Payload `id=1%27%20AND%20...` sepanjang ±900 token | perintah-salah | Perintah tidak dapat dijalankan; jawaban kehilangan seluruh bagian 3–6 | 2 |
+| K3 | `grep 'XSS Success'` dan `grep 'API List'` | halusinasi-fakta | Pola grep tidak ada di DVWA; hasil selalu kosong dan disalahartikan sebagai "tidak rentan" | 1 |
+| K3 | `curl --data "name=<script>..." ".../xss_s/"` | perintah-salah | Parameter salah; stored XSS butuh `txtName` + `mtxMessage` + `btnSign` | 2 |
+| K3 | Payload `1' OR '1'='1` dikirim ke modul XSS | prioritas-keliru | Menghabiskan waktu pada jenis serangan yang salah untuk modul XSS | 2 |
+| K4 | `curl --data "command=whoami"` dan `command=id` | halusinasi-fakta | Parameter `command` tidak ada pada modul exec (hanya `ip`); perintah diabaikan | 1 |
+| K4 | `nmap -p 80 --script=vulnscan` dan `--script=sqli` | halusinasi-fakta | Nama NSE script tidak valid; nmap berhenti dengan error, bukan menghasilkan temuan | 1, 3 |
+| K4 | "level `high` membuatnya sangat rentan" | prioritas-keliru | Logika terbalik; `high` justru level paling sulit, menyimpangkan prioritas pengujian | 1, 3 |
+| K4 | Menyalin satu baris instruksi format template | kebocoran-template | Sama seperti K1 run 3 | 3 |
+
+Jumlah: **12 temuan** pada 12 run (1,0 per run). Tidak ditemukan satu pun nomor CVE atau
+versi software yang dikarang — klaim palsu yang muncul berbentuk perintah/parameter/script,
+bukan referensi kerentanan.
 
 ## 6. Ringkasan kualitas
 
 | Aspek | Hasil | Kesimpulan |
 |---|---|---|
-| Rata-rata skor seluruh kasus | | |
-| Kasus terbaik | | |
-| Kasus terlemah | | |
-| Jumlah false lead | | |
-| Kesimpulan kelayakan | | layak dipakai sebagai *saran awal* / hanya *pendamping* |
+| Rata-rata skor seluruh kasus | **2,80** (K1 3,40 · K2 2,33 · K3 2,87 · K4 2,60) | di bawah target 3,5 |
+| Kasus terbaik | K1 — recon umum level low (3,40) | tugas terbuka tanpa detail teknis paling cocok untuk model 3B |
+| Kasus terlemah | K2 — SQL Injection level low (2,33) | butuh pengetahuan sintaks/metode yang detail; model 3B gagal di sini |
+| Jumlah false lead | 12 (1,0 per run) | melebihi batas yang ditetapkan (≤ 1 per kasus) |
+| Pelanggaran format berat | 4 run (K2-2, K3-1, K4-2, K4-3) | jawaban terpotong/rusak pada kasus dengan keluaran panjang |
+| Kesimpulan kelayakan | **hanya *pendamping*** | saran harus diverifikasi manusia sebelum dieksekusi |
+
+Catatan: dimensi "eksekusi" dan "kebenaran" dinilai oleh Anggota 2 berdasarkan perilaku DVWA
+yang diketahui; **verifikasi silang oleh Anggota 3 wajib** sebelum angka ini masuk laporan
+akhir, sesuai prosedur §8 butir 6.
+
+---
 
 ---
 
 ## 7. Metrik performa (dari `output/runs.jsonl`)
 
-Ambil data dengan:
+Ambil data dengan script bawaan (stdout berupa tabel siap-tempel):
 
 ```powershell
-Get-Content ai-assistant/output/runs.jsonl |
-  ForEach-Object { $_ | ConvertFrom-Json } |
-  Select-Object timestamp, mode, level, latency_s, eval_count, tokens_per_second |
+python ai-assistant/summarize_runs.py           # semua run
+python ai-assistant/summarize_runs.py --per-tag # rata-rata per kasus
+python ai-assistant/summarize_runs.py --format csv > metrik.csv
+```
+
+Alternatif manual:
+
+```powershell
+Get-Content ai-assistant/output/runs.jsonl | ForEach-Object { $_ | ConvertFrom-Json } |
+  Select-Object timestamp, tag, latency_s, prompt_eval_s, eval_count, tokens_per_second |
   Format-Table -AutoSize
 ```
 
-| Kode | Latency (s) | `eval_count` | Tokens/s | Panjang jawaban (karakter) |
-|---|---|---|---|---|
-| K1 | | | | |
-| K2 | | | | |
-| K3 | | | | |
-| K4 | | | | |
-| K5 | | | | |
+Ringkasan per kasus (rata-rata 3 run):
+
+| Kode | Latency (s) | Prompt eval (s) | `eval_count` | Tokens/s | Panjang jawaban (karakter) | Berhenti karena |
+|---|---|---|---|---|---|---|
+| K1 | 139,5 | 30,9 | 698 | 6,67 | 2.152 | `stop` ×3 |
+| K2 | 137,5 | 31,1 | 757 | 7,26 | 2.005 | `stop` ×2, `length` ×1 |
+| K3 | 157,4 | 30,8 | 853 | 6,85 | 2.763 | `stop` ×2, `length` ×1 |
+| K4 | 133,4 | 32,0 | 715 | 7,24 | 2.317 | `stop` ×2, `length` ×1 |
+| K5 | – | – | – | – | – | belum dijalankan |
+
+Rincian per run (dari `runs.jsonl`):
+
+| Run | Latency (s) | Prompt eval (s) | Token | Token/s | Karakter | Selesai |
+|---|---|---|---|---|---|---|
+| K1-1 | 172,1 | 33,9 | 802 | 5,90 | 2.478 | `stop` |
+| K1-2 | 127,5 | 25,9 | 701 | 7,06 | 2.180 | `stop` |
+| K1-3 | 119,1 | 32,9 | 592 | 7,05 | 1.799 | `stop` |
+| K2-1 | 127,6 | 30,7 | 681 | 7,19 | 2.189 | `stop` |
+| K2-2 | 154,7 | 29,4 | 900 | 7,32 | 1.620 | `length` |
+| K2-3 | 130,3 | 33,1 | 691 | 7,27 | 2.206 | `stop` |
+| K3-1 | 162,8 | 31,6 | 900 | 6,98 | 2.773 | `length` |
+| K3-2 | 163,8 | 29,3 | 900 | 6,80 | 3.067 | `stop` (mentok tepat di batas) |
+| K3-3 | 145,7 | 31,4 | 759 | 6,78 | 2.450 | `stop` |
+| K4-1 | 138,0 | 32,3 | 763 | 7,38 | 2.617 | `stop` |
+| K4-2 | 98,2 | 30,3 | 482 | 7,33 | 1.464 | `stop` |
+| K4-3 | 164,1 | 33,4 | 900 | 7,00 | 2.869 | `length` |
+
+Catatan: prompt eval stabil di 25–34 s (rata-rata ± 31 s) untuk prompt ± 1.900 token, jadi
+biaya terbesar adalah generasi. Tiga run menyentuh batas 900 token karena model menulis
+sangat banyak perintah pada kasus XSS/Command Injection; menaikkan batas akan menambah
+waktu ± 30 s per run.
 
 Catatan metodologis: `tokens_per_second = eval_count / (eval_duration / 1e9)` dan hanya
 mengukur fase generasi, bukan waktu muat model ke RAM (run pertama selalu lebih lambat).
 Karena itu run pertama tiap model dibuang sebagai *warm-up*.
+
+### 7.1 Pengaruh jumlah thread CPU (uji pendahuluan)
+
+Sebelum 12 run evaluasi dijalankan, dilakukan uji kecil untuk memilih `num_thread`.
+Masing-masing 150 token, prompt identik, model sudah termuat di RAM.
+
+| `num_thread` | Latency total | Prompt eval | Generasi | Token/s |
+|---|---|---|---|---|
+| 4 (nilai awal modelfile) | 110,6 s | 74,8 s | 25,2 s | 5,93 |
+| **8 (dipakai)** | **86,5 s** | **46,7 s** | 29,0 s | 5,18 |
+
+Kesimpulan: 8 thread memangkas **prompt eval 37%** dan total latency 22%, sehingga
+`num_thread 8` dipakai. Angka token/s generasi sedikit lebih rendah pada 8 thread
+(29,0 s vs 25,2 s untuk 150 token) — variasi kecil yang tidak konsisten; karena latency
+total lebih penting untuk pengalaman pemakaian, 8 thread tetap dipilih.
+
+### 7.2 Efek optimasi terhadap run awal
+
+| Kondisi | Latency | Prompt eval | Token/s |
+|---|---|---|---|
+| Run pertama (ctx 4096, 4 thread, RAM tersisa 0,7 GB) | 434,0 s | ± 210 s | 3,12 |
+| Setelah optimasi (ctx 3072, 8 thread, `keep_alive 30m`) | 86,5 s (150 token) | 46,7 s | 5,18 |
+
+Peningkatan ± 4× terutama berasal dari berkurangnya tekanan memori (tidak ada lagi
+halaman model yang terlempar ke disk) dan konteks yang lebih kecil.
 
 ---
 
@@ -156,28 +238,45 @@ Karena itu run pertama tiap model dibuang sebagai *warm-up*.
 
 | Keterbatasan | Penjelasan | Mitigasi dalam desain |
 |---|---|---|
-| Model 3B | penalaran dangkal, mudah keluar format pada prompt panjang | temperature rendah, template format ketat, `num_ctx` 4096 |
-| Halusinasi CVE/versi | model kecil cenderung mengarang nomor CVE | aturan eksplisit "jangan mengarang" + kolom kesetiaan di rubrik |
+| Model 3B | penalaran dangkal, mudah keluar format pada prompt panjang | temperature rendah, template format ketat, `num_ctx` 3072 |
+| Halusinasi perintah/parameter | **terbukti** pada evaluasi: `command=` (K4), `name=` untuk stored XSS (K3), `nmap --script=vulnscan` (K4) | aturan "jangan mengarang" + tabel endpoint; terbukti belum cukup |
+| Kebocoran template | 3 run menyalin kalimat instruksi prompt sebagai isi jawaban | perlu instruksi "jangan ulangi teks instruksi" atau pemisahan tegas blok instruksi vs data |
+| Metode HTTP tertukar | `--data` dikirim ke endpoint GET (K2, K3) | daftar fakta perlu menyebut metode per modul (sudah ditambahkan, hasil: masih 4 pelanggaran) |
 | Tidak tahu state lab | model tidak melihat respons HTTP target | agent tidak mengeksekusi; manusia menutup loop dengan bukti nyata |
 | Bias data latih | saran umum internet, bukan spesifik DVWA versi lokal | fakta lab ditulis di prompt sebagai daftar tertutup |
 | Prompt injection | `--mode report` menerima teks bebas (log/notes) | aturan "hanya berdasarkan catatan", output tetap ditinjau manusia |
-| CPU-only | latency tinggi, throughput rendah | `num_predict 700`, `num_thread 4`, model ≤3B |
-| Tidak deterministik | 3 run bisa berbeda | evaluasi rata-rata 3 run, temperature 0.3 |
+| CPU-only | latency tinggi, throughput rendah | `num_predict 900`, `num_thread 8`, `keep_alive 30m`, model ≤3B |
+| Verbositas | 3 dari 12 run menyentuh batas 900 token | batas dinaikkan dari 700; masih perlu pemangkasan template |
+| Tidak deterministik | 3 run bisa sangat berbeda (K2: skor 1,4 vs 3,0) | evaluasi rata-rata 3 run, temperature 0.3 |
 
 ---
 
 ## 10. Kesimpulan sementara
 
-_Posisi awal sebelum data live:_ agent **tidak dimaksudkan menggantikan** analisis manusia.
-Target kelayakan yang ditetapkan tim: rata-rata skor ≥ 3,5 dengan false lead ≤ 1 per kasus
-pada K1–K4, dan **nol klaim tanpa dasar** pada K5 (draf laporan), karena K5 menyangkut
-integritas bukti di laporan akhir.
+Hasil pengujian 12 run (empat kasus) menunjukkan rata-rata **2,80**, yaitu **di bawah target
+3,5**. Dengan demikian assistant **tidak layak dipakai sebagai sumber perintah siap-pakai**,
+tetapi masih berguna sebagai **pendamping**: memberi urutan langkah, mengingatkan modul yang
+relevan, dan menyusun kerangka analisis yang kemudian diverifikasi manusia.
 
-Bila target tidak tercapai, urutan perbaikan yang disiapkan:
-1. Perketat SYSTEM prompt (larangan halusinasi + format).
-2. Turunkan `temperature` ke 0.1–0.2.
-3. Pecah prompt menjadi dua tahap (hipotesis dulu, perintah kemudian).
-4. Ganti model dasar ke `llama3.2:3b` dan bandingkan.
+Temuan paling penting bukan angka rata-ratanya, melainkan **pola kegagalannya**:
+
+1. Pengetahuan *prosedural* (urutan langkah, struktur laporan) cukup baik — skor format
+   3,3–4,0 pada semua kasus.
+2. Pengetahuan *faktual-teknis* (parameter, metode HTTP, nama script) lemah dan cenderung
+   dikarang — inilah sumber 12 *false lead*.
+3. Semakin spesifik permintaan, semakin buruk hasilnya (K2 SQLi 2,33 vs K1 recon 3,40).
+
+Karena itu rekomendasi pemakaian dalam proyek: **setiap saran wajib diverifikasi manual
+sebelum dieksekusi**, dan agent tidak diberi kemampuan mengeksekusi perintah (lihat §2.6
+laporan Metode). Ini juga alasan kolom "Saran dari AI assistant" pada
+`docs/skenario-serangan.md` dicatat **beserta penilaian berguna/tidak**, bukan disalin
+sebagai instruksi.
+
+Tiga perbaikan yang belum sempat diuji (kandidat pekerjaan lanjutan):
+1. Larangan eksplisit menyalin teks instruksi + pemisahan blok `<instruksi>` dan `<data>`.
+2. Pecah prompt dua tahap: (a) hipotesis saja, (b) perintah untuk hipotesis terpilih.
+3. Bandingkan `llama3.2:3b` sebagai model dasar; bila lebih baik, ganti `FROM` di modelfile
+   dan ulangi K1–K4 (± 30 menit per model).
 
 ---
 
