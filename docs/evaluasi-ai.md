@@ -6,6 +6,13 @@
 > **Tujuan:** mengukur seberapa berguna saran AI assistant untuk pengujian DVWA di lab,
 > sekaligus mencatat *false lead* dan halusinasi — bukan hanya memuji outputnya.
 
+> **Catatan status (23 November 2026):** seluruh angka pada dokumen ini adalah *baseline*
+> dari prompt sebelum batas keselamatan diperketat. Versi prompt saat ini hanya menyusun
+> pemeriksaan awal non-destruktif, dan target/server model dibatasi ke *loopback*. Belum
+> ada evaluasi ulang untuk versi prompt tersebut. K5 dan verifikasi silang Anggota 3 juga
+> masih tertunda; jangan menyajikan perubahan prompt sebagai peningkatan terukur sebelum
+> pengujian ulang selesai.
+
 ---
 
 ## 1. Lingkungan evaluasi
@@ -17,7 +24,7 @@
 | Runtime | Ollama 0.40.16 (server `http://localhost:11434`) |
 | Model dasar | `qwen2.5:3b-instruct`, kuantisasi Q4_K_M (± 1,9 GB) |
 | Model proyek | `pentest-lab:3b` (modelfile: `temperature 0.3`, `num_ctx 3072`, `num_predict 900`, `num_thread 8`, `keep_alive 30m`) |
-| Target | DVWA `http://localhost:8080` (level `low`, `medium`, `high`) |
+| Target | DVWA lokal `http://localhost:8080` (level `low`, `medium`, `high`) |
 | Mode eksekusi | CPU-only, tanpa akselerasi GPU |
 | Script | `ai-assistant/recon_agent.py` (commit `436c291`) |
 | Tanggal pengujian | 19–20 November 2026 |
@@ -225,12 +232,13 @@ halaman model yang terlempar ke disk) dan konteks yang lebih kecil.
 1. `ollama serve`, lalu `ollama create pentest-lab:3b -f ai-assistant/ollama-config/modelfile`.
 2. Jalankan `ollama stop` untuk model lain agar RAM tidak berebut.
 3. Jalankan satu run pemanasan, buang hasilnya.
-4. Untuk setiap kasus K1–K5: jalankan 3 kali, simpan output `output/*.md`.
-5. Catat skor pada tabel bagian 4 dan setiap penyimpangan pada bagian 5.
-6. Verifikasi silang oleh Anggota 3: apakah saran benar-benar bisa dieksekusi di lab?
-7. Salin angka performa dari `runs.jsonl` ke bagian 7.
-8. Bandingkan dengan satu model pembanding (opsional) bila waktu memungkinkan:
-   `ollama pull llama3.2:3b` lalu ulangi langkah 4 untuk K1 dan K5.
+4. Jalankan kasus yang disetujui tim tiga kali dengan prompt yang sama; simpan output
+   `output/*.md` dan catat versi model/prompt.
+5. Catat skor serta penyimpangan; nilai hanya saran yang aman dan tidak destruktif.
+6. Minta Anggota 3 memeriksa kesesuaian dengan hasil yang benar-benar diamati di lab.
+7. Jalankan `python ai-assistant/summarize_runs.py --per-tag` untuk mencetak tabel dan
+   grafik ASCII dari metrik yang tercatat.
+8. Tandai hasil sebagai evaluasi prompt saat ini; jangan gabungkan dengan *baseline* lama.
 
 ---
 
@@ -243,7 +251,7 @@ halaman model yang terlempar ke disk) dan konteks yang lebih kecil.
 | Kebocoran template | 3 run menyalin kalimat instruksi prompt sebagai isi jawaban | perlu instruksi "jangan ulangi teks instruksi" atau pemisahan tegas blok instruksi vs data |
 | Metode HTTP tertukar | `--data` dikirim ke endpoint GET (K2, K3) | daftar fakta perlu menyebut metode per modul (sudah ditambahkan, hasil: masih 4 pelanggaran) |
 | Tidak tahu state lab | model tidak melihat respons HTTP target | agent tidak mengeksekusi; manusia menutup loop dengan bukti nyata |
-| Bias data latih | saran umum internet, bukan spesifik DVWA versi lokal | fakta lab ditulis di prompt sebagai daftar tertutup |
+| Bias data latih | saran umum dapat tidak sesuai dengan versi DVWA lokal | gunakan pemeriksaan awal, verifikasi manusia, dan catat versi lab |
 | Prompt injection | `--mode report` menerima teks bebas (log/notes) | aturan "hanya berdasarkan catatan", output tetap ditinjau manusia |
 | CPU-only | latency tinggi, throughput rendah | `num_predict 900`, `num_thread 8`, `keep_alive 30m`, model ≤3B |
 | Verbositas | 3 dari 12 run menyentuh batas 900 token | batas dinaikkan dari 700; masih perlu pemangkasan template |
@@ -272,11 +280,13 @@ laporan Metode). Ini juga alasan kolom "Saran dari AI assistant" pada
 `docs/skenario-serangan.md` dicatat **beserta penilaian berguna/tidak**, bukan disalin
 sebagai instruksi.
 
-Tiga perbaikan yang belum sempat diuji (kandidat pekerjaan lanjutan):
-1. Larangan eksplisit menyalin teks instruksi + pemisahan blok `<instruksi>` dan `<data>`.
-2. Pecah prompt dua tahap: (a) hipotesis saja, (b) perintah untuk hipotesis terpilih.
-3. Bandingkan `llama3.2:3b` sebagai model dasar; bila lebih baik, ganti `FROM` di modelfile
-   dan ulangi K1–K4 (± 30 menit per model).
+Pekerjaan lanjutan yang belum dievaluasi:
+1. Jalankan K5 hanya setelah tersedia catatan bukti nyata yang sudah disamarkan.
+2. Ulangi kasus yang sama dengan versi prompt saat ini dan bandingkan terhadap *baseline*
+   tanpa mengubah rubrik atau jumlah percobaan.
+3. Minta Anggota 3 memverifikasi penilaian teknis dan catat perbedaan pendapat.
+4. Evaluasi model pembanding hanya bila waktu/perangkat memungkinkan; jangan mengirim
+   catatan proyek ke layanan model jarak jauh.
 
 ---
 
