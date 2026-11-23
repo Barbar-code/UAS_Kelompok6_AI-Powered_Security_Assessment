@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import ipaddress
 import json
 import re
 import sys
@@ -44,54 +43,82 @@ RUNS_LOG = "runs.jsonl"
 
 # --- Guardrail: hanya target lab yang diizinkan -----------------------------
 
-LAB_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "host.docker.internal"}
-LAB_NETWORKS = (
-    ipaddress.ip_network("172.20.0.0/24"),  # uas-lab-net (docs/topologi-lab.md)
-    ipaddress.ip_network("127.0.0.0/8"),
-)
+LAB_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+OLLAMA_HOSTNAMES = LAB_HOSTNAMES
 
 
 class LabScopeError(RuntimeError):
-    """Target berada di luar ruang lingkup lab."""
+    """Target atau server model berada di luar ruang lingkup lokal."""
 
 
 def normalize_target(raw: str) -> str:
-    """Ubah input target menjadi URL kanonik http://host[:port]."""
+    """Validasi target dan kembalikan URL DVWA lokal yang kanonik."""
     value = (raw or "").strip()
     if not value:
         raise LabScopeError("Target kosong. Contoh: --target http://localhost:8080")
     if "://" not in value:
         value = "http://" + value
-    parts = urllib.parse.urlsplit(value)
-    if not parts.hostname:
+    try:
+        parts = urllib.parse.urlsplit(value)
+        hostname = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError as exc:
+        raise LabScopeError(f"Target tidak valid: {raw!r}") from exc
+
+    if parts.scheme.lower() != "http":
+        raise LabScopeError("Target DVWA harus memakai skema http.")
+    if parts.username is not None or parts.password is not None:
+        raise LabScopeError("Target tidak boleh memuat informasi akun.")
+    if hostname not in LAB_HOSTNAMES or port != 8080:
+        raise LabScopeError(
+            "Target yang diizinkan hanya http://localhost:8080 "
+            "(atau alamat loopback pada port 8080)."
+        )
+    if parts.path not in ("", "/") or parts.query or parts.fragment:
+        raise LabScopeError("Berikan alamat dasar DVWA tanpa path, query, atau fragment.")
+
+    if not hostname:
         raise LabScopeError(f"Target tidak valid: {raw!r}")
-    return urllib.parse.urlunsplit(
-        (parts.scheme or "http", parts.netloc, parts.path or "", "", "")
-    )
+    display_host = f"[{hostname}]" if ":" in hostname else hostname
+    return f"http://{display_host}:8080"
 
 
 def assert_lab_target(raw: str) -> str:
-    """Pastikan target ada di dalam lab sendiri, bukan sistem pihak ketiga."""
-    target = normalize_target(raw)
-    host = urllib.parse.urlsplit(target).hostname or ""
+    """Pastikan target adalah DVWA yang dipublikasikan di host lokal."""
+    return normalize_target(raw)
 
-    if host.lower() in LAB_HOSTNAMES:
-        return target
 
+def assert_local_ollama_host(raw: str) -> str:
+    """Pastikan prompt dan catatan tetap dikirim ke Ollama di mesin lokal."""
+    value = (raw or "").strip()
+    if not value:
+        raise LabScopeError("Alamat Ollama kosong.")
+    if "://" not in value:
+        value = "http://" + value
     try:
-        addr = ipaddress.ip_address(host)
-    except ValueError:
-        addr = None
+        parts = urllib.parse.urlsplit(value)
+        hostname = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError as exc:
+        raise LabScopeError("Alamat Ollama tidak valid.") from exc
 
-    if addr is not None and any(addr in net for net in LAB_NETWORKS):
-        return target
+    if (
+        parts.scheme.lower() != "http"
+        or parts.username is not None
+        or parts.password is not None
+        or hostname not in OLLAMA_HOSTNAMES
+        or port != 11434
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+    ):
+        raise LabScopeError(
+            "Ollama harus berjalan lokal pada http://localhost:11434 "
+            "(atau alamat loopback yang setara)."
+        )
 
-    raise LabScopeError(
-        f"Target '{host}' berada di luar lab.\n"
-        "Yang diizinkan hanya: localhost, 127.0.0.1, ::1, host.docker.internal,\n"
-        "atau alamat di subnet lab 172.20.0.0/24 (lihat docs/topologi-lab.md).\n"
-        "Proyek ini hanya menguji sistem milik tim sendiri."
-    )
+    display_host = f"[{hostname}]" if ":" in hostname else hostname
+    return f"http://{display_host}:11434"
 
 
 # --- Template prompt --------------------------------------------------------
@@ -234,7 +261,7 @@ def save_output(outdir: Path, stem: str, text: str) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="AI assistant (Ollama lokal) untuk recon DVWA di lab sendiri.",
+        description="AI assistant lokal untuk pemeriksaan awal DVWA di lab sendiri.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -242,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=("recon", "report"),
         default="recon",
-        help="recon = rencana pemindaian (default); report = draf bagian laporan",
+        help="recon = rencana pemeriksaan awal (default); report = draf dari catatan",
     )
     parser.add_argument(
         "--target",
@@ -262,8 +289,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tools",
-        default="nmap, curl, Burp Suite Community, browser (Firefox/Chrome)",
-        help="Tool yang tersedia di mesin penyerang",
+        default="browser (Firefox/Chrome), curl",
+        help="Alat pemeriksaan awal yang tersedia",
     )
     parser.add_argument("--notes", default="-", help="Catatan tambahan (teks bebas)")
     parser.add_argument(
@@ -283,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--host",
         default="http://localhost:11434",
-        help="Alamat server Ollama (default: http://localhost:11434)",
+        help="Alamat Ollama lokal (default: http://localhost:11434)",
     )
     parser.add_argument(
         "--outdir",
@@ -354,15 +381,23 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[DITOLAK] {exc}", file=sys.stderr)
         return 2
 
+    ollama_host = args.host
+    if not args.dry_run:
+        try:
+            ollama_host = assert_local_ollama_host(args.host)
+        except LabScopeError as exc:
+            print(f"[DITOLAK] {exc}", file=sys.stderr)
+            return 2
+
     # 2. Opsional: cek Ollama.
     if args.check:
         try:
-            models = list_models(args.host)
+            models = list_models(ollama_host)
         except (urllib.error.URLError, OSError) as exc:
-            print(f"[GAGAL] Ollama tidak bisa dihubungi di {args.host}: {exc}")
+            print(f"[GAGAL] Ollama tidak bisa dihubungi di {ollama_host}: {exc}")
             print("Jalankan `ollama serve` lalu coba lagi.")
             return 3
-        print(f"Ollama aktif di {args.host}")
+        print(f"Ollama aktif di {ollama_host}")
         base = args.model.split(":")[0]
         hits = [m for m in models if m == args.model or m.split(":")[0] == base]
         print("Model tersedia:", ", ".join(models) if models else "(kosong)")
@@ -424,12 +459,12 @@ def main(argv: list[str] | None = None) -> int:
         "num_thread": args.num_thread,
     }
     print(
-        f"[i] model={args.model} host={args.host} mode={args.mode} level={args.level} "
+        f"[i] model={args.model} host={ollama_host} mode={args.mode} level={args.level} "
         f"threads={args.num_thread} ctx={args.num_ctx} max_tokens={args.num_predict}"
     )
     try:
         answer, metrics = generate(
-            host=args.host,
+            host=ollama_host,
             model=args.model,
             prompt=prompt,
             options=options,
@@ -442,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[GAGAL] Ollama menolak permintaan (HTTP {exc.code}): {detail}", file=sys.stderr)
         return 3
     except (urllib.error.URLError, OSError) as exc:
-        print(f"[GAGAL] Tidak bisa menghubungi Ollama di {args.host}: {exc}", file=sys.stderr)
+        print(f"[GAGAL] Tidak bisa menghubungi Ollama di {ollama_host}: {exc}", file=sys.stderr)
         print("Pastikan `ollama serve` berjalan dan model sudah di-pull.", file=sys.stderr)
         return 3
 
