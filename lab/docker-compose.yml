@@ -1,21 +1,22 @@
-﻿version: "3.9"
+name: uas-lab
 
 services:
   dvwa:
     image: vulnerables/web-dvwa:latest
     container_name: dvwa-web
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
-      - "8080:80"
+      - "127.0.0.1:8080:80"
     environment:
-      - MYSQL_HOST=db
-      - MYSQL_DATABASE=dvwa
-      - MYSQL_USER=dvwa
-      - MYSQL_PASSWORD=dvwa
-      - DVWA_WEBMASTER=admin@example.com
-      - DVWA_DEFAULT_SECURITY=low
-      - DVWA_SERVER_NAME=DVWA-Lab
+      MYSQL_HOST: db
+      MYSQL_DATABASE: dvwa
+      MYSQL_USER: dvwa
+      MYSQL_PASSWORD: dvwa
+      DVWA_WEBMASTER: admin@example.com
+      DVWA_DEFAULT_SECURITY: low
+      DVWA_SERVER_NAME: DVWA-Lab
     networks:
       - lab-net
     restart: unless-stopped
@@ -31,6 +32,11 @@ services:
     volumes:
       - dvwa-db-data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     networks:
       - lab-net
     restart: unless-stopped
@@ -39,6 +45,7 @@ networks:
   lab-net:
     name: uas-lab-net
     driver: bridge
+    internal: true
 
 volumes:
   dvwa-db-data:

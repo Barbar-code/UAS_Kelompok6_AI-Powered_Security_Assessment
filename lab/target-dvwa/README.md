@@ -1,19 +1,22 @@
-﻿# Target DVWA
+# Target DVWA
 
-## Deskripsi
-Target aplikasi yang digunakan pada lab ini adalah DVWA (Damn Vulnerable Web Application). Aplikasi ini dipilih karena memiliki berbagai celah keamanan yang umum dijumpai pada aplikasi web dan dapat dipakai untuk proses pembelajaran serta pengujian yang terkendali.
+Target proyek adalah aplikasi latihan DVWA di Docker. Jalankan dari direktori proyek:
 
-## Akses
-- URL aplikasi: http://localhost:8080
-- User default: `admin`
-- Password default: `password`
+```powershell
+docker compose -f .\lab\docker-compose.yml up -d
+docker compose -f .\lab\docker-compose.yml ps
+```
 
-## Konfigurasi yang digunakan
-- `DVWA_DEFAULT_SECURITY=low`
-- Jaringan internal: `uas-lab-net`
-- Database: MySQL dalam container `dvwa-db`
+Setelah layanan basis data sehat, akses aplikasi hanya melalui `http://localhost:8080`. Pemetaan port Compose terikat ke `127.0.0.1`; jangan membukanya ke seluruh antarmuka jaringan.
 
-## Catatan operasional
-- Aplikasi berjalan di dalam Docker dan hanya dapat diakses dari mesin host atau jaringan lokal yang sama.
-- Semua perubahan data dapat direset dengan menjalankan script `lab/reset-lab.sh`.
-- Lingkungan ini tidak terhubung ke internet publik dan harus dipelihara agar tetap berada dalam batas lab yang ditentukan.
+| Pengaturan | Nilai |
+|---|---|
+| Container aplikasi | `dvwa-web` |
+| Container basis data | `dvwa-db` |
+| Nilai level yang diminta saat awal | `low` (verifikasi di antarmuka DVWA) |
+| Kredensial awal DVWA | `admin` / `password` |
+| Jaringan | `uas-lab-net`, internal Docker |
+
+Kredensial awal hanya berlaku untuk lab. Jangan gunakan konfigurasi ini di layanan publik/produksi. Verifikasi level keamanan aktual pada antarmuka DVWA sebelum pengujian karena dukungan variabel `DVWA_DEFAULT_SECURITY` bergantung pada image. Port MySQL tidak dipublikasikan ke host dan alamat IP container tidak dijamin tetap.
+
+Untuk reset data gunakan `.\lab\reset-lab.ps1`, lalu konfirmasi dengan mengetik `RESET`. Perintah ini menghapus volume basis data dan tidak dapat membatalkan data yang terhapus.
